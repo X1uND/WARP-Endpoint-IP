@@ -1,5 +1,5 @@
 """
-Test cloudflare WARP endpoints 
+Test cloudflare WARP endpoints
 Select all the best WARP endpoints
 Thanks to https://gitlab.com/Misaka-blog/warp-script#warp-endpoint-ip-优选脚本
 """
@@ -7,6 +7,7 @@ Thanks to https://gitlab.com/Misaka-blog/warp-script#warp-endpoint-ip-优选脚�
 import asyncio
 import csv
 import ipaddress
+import logging
 import random
 import socket
 import time
@@ -24,10 +25,6 @@ CHECK_IPV6 = False  # Whether to check IPv6, NOT IMPLEMENTED YET
 """
 Predefined Constants
 """
-
-CHECK_CHUNK_SIZE = round(
-    MIN_EXPECTED_RESULT_COUNT / 2
-)  # Number of IP checked in one iteration
 CDIRS_V4 = (
     "162.159.192.0/24",
     "162.159.193.0/24",
@@ -41,12 +38,31 @@ CDIRS_V4 = (
 CDIRS_V6 = ("2606:4700:d0::/48", "2606:4700:d1::/48")
 PORTS = (
     2408,
-    # 500, 864, 880, 894, 934, 1070, 1180, 3476, 3581, 4198,
-    # 4500, 5279, 5956, 7103, 7152, 7559, 8319, 8854, 8886,
+    500,
+    864,
+    880,
+    894,
+    934,
+    1070,
+    1180,
+    3476,
+    3581,
+    4198,
+    4500,
+    5279,
+    5956,
+    7103,
+    7152,
+    7559,
+    8319,
+    8854,
+    8886,
 )
 DATA = bytes.fromhex(
-    "041d69e67922099aa0b93d1e7b309ec5851ae2a3d6bf82a8bb5bb03ed46fb2346500000000000000000000000077a"
-    "4a8cd5d883e66088e5f70adb42f8a"
+    "041d69e67922099aa0b93d1e7b309ec5"
+    "851ae2a3d6bf82a8bb5bb03ed46fb234"
+    "6500000000000000000000000077a4a8"
+    "cd5d883e66088e5f70adb42f8a"
 )
 
 
@@ -76,9 +92,10 @@ async def check_endpoint(dst):
 
 
 async def main():
+    logging.basicConfig(level=logging.INFO)
     endpoints = []
 
-    print("Initialising IPv4 list...")
+    logging.info("Initialising IPv4 list...")
     endpoints += [
         (str(ip_v4), random.choice(PORTS))
         for ipv4_cdri in CDIRS_V4
@@ -86,30 +103,42 @@ async def main():
     ]
 
     if CHECK_IPV6:
-        print("Initialising IPv6 list...")
+        logging.info("Initialising IPv6 list...")
         endpoints += [
             (str(ip_v6), random.choice(PORTS))
             for ipv6_cdri in CDIRS_V6
             for ip_v6 in ipaddress.IPv6Network(ipv6_cdri)
         ]
 
-    print("Checking connections...")
+    logging.info("Checking connections...")
     random.shuffle(endpoints)
     output = []
-    while len(endpoints):
-        tasks = []
-        for index in range(CHECK_CHUNK_SIZE):
-            tasks.append(check_endpoint(endpoints.pop(index)))
-        check_result = await asyncio.gather(*tasks)
+    window_start = 0
+    while window_start < len(endpoints):
+        window_size = min(MIN_EXPECTED_RESULT_COUNT, len(endpoints) - window_start)
+        logging.info(
+            f"Checking {window_size} endpoints, "
+            f"{len(endpoints) - (window_start + window_size)} left"
+        )
+        tasks = [
+            check_endpoint(endpoints[index])
+            for index in range(window_start, window_start + window_size)
+        ]
+        check_results = await asyncio.gather(*tasks)
         output += [
-            (":".join(map(str, endpoint)), check_result[1])
-            for endpoint, check_result in zip(endpoints, check_result)
+            (":".join(map(str, endpoints[index])), check_result[1])
+            for index, check_result in zip(
+                range(window_start, window_start + window_size),
+                check_results,
+            )
             if check_result[0]
         ]
+        window_start += window_size
         if len(output) >= MIN_EXPECTED_RESULT_COUNT:
+            logging.info(f"Got {len(output)} results, which is enough, stop checking")
             break
 
-    print(f'End up with {len(output)} results, export to "{OUTPUT_FILENAME}"')
+    logging.info(f'End up with {len(output)} results, export to "{OUTPUT_FILENAME}"')
     output.sort(key=lambda row: row[-1])
     with open(OUTPUT_FILENAME, "w", newline="") as f:
         writer = csv.writer(f)
