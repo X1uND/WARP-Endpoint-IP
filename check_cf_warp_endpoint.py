@@ -81,9 +81,9 @@ async def check_endpoint(dst):
     try:
         resp, latency = await asyncio.to_thread(send_request)
         return (
-            resp[0]
+            resp[0][0:5]
             == bytes.fromhex(
-                "cf0000007922099aa0b93d1e7b309ec5"
+                "cf00000000"
             ),  # Check whether the response is correct
             round(latency * 1000),  # ms
         )
