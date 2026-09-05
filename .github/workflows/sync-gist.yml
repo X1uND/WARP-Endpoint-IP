@@ -1,0 +1,83 @@
+name: Sync Gist
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Sync from upstream Gist
+        shell: bash
+        run: |
+          set -e
+
+          GIST_ID="d65ef7ed5fed7049f599e7a863f197db"
+          GIST_OWNER="thanksshu"
+          GIST_REPO="https://gist.github.com/${GIST_OWNER}/${GIST_ID}.git"
+          TARGET_FILE="check_cf_warp_endpoint.py"
+
+          echo "=== Clone upstream Gist ==="
+
+          rm -rf /tmp/upstream-gist
+
+          git clone --quiet "$GIST_REPO" /tmp/upstream-gist
+
+          if [ ! -f "/tmp/upstream-gist/$TARGET_FILE" ]; then
+            echo "ERROR: $TARGET_FILE not found in upstream Gist."
+            exit 1
+          fi
+
+          cd /tmp/upstream-gist
+
+          UPSTREAM_SHA=$(git rev-parse HEAD)
+          UPSTREAM_DATE=$(git log -1 --format='%cI')
+          UPSTREAM_DATE_UTC=$(git log -1 --date=format:'%Y-%m-%d %H:%M:%S UTC' --format='%cd')
+          UPSTREAM_MESSAGE=$(git log -1 --format='%s')
+
+          echo "Upstream commit : $UPSTREAM_SHA"
+          echo "Upstream date   : $UPSTREAM_DATE_UTC"
+          echo "Upstream message: $UPSTREAM_MESSAGE"
+
+          cd "$GITHUB_WORKSPACE"
+
+          echo "=== Compare Python file ==="
+
+          if [ -f "$TARGET_FILE" ] && cmp -s \
+              "$TARGET_FILE" \
+              "/tmp/upstream-gist/$TARGET_FILE"; then
+
+            echo "Already up to date."
+            echo "No commit required."
+            exit 0
+          fi
+
+          echo "=== Upstream file changed ==="
+
+          cp "/tmp/upstream-gist/$TARGET_FILE" "$TARGET_FILE"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add "$TARGET_FILE"
+
+          git commit \
+            -m "Sync check_cf_warp_endpoint.py from upstream Gist" \
+            -m "Upstream commit: $UPSTREAM_SHA" \
+            -m "Upstream date: $UPSTREAM_DATE_UTC" \
+            -m "Upstream message: $UPSTREAM_MESSAGE"
+
+          git push origin main
+
+          echo "=== Sync completed ==="
