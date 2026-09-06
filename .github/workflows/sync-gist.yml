@@ -54,30 +54,93 @@ jobs:
 
           echo "=== Compare Python file ==="
 
+          FILE_CHANGED=false
+
           if [ -f "$TARGET_FILE" ] && cmp -s \
               "$TARGET_FILE" \
               "/tmp/upstream-gist/$TARGET_FILE"; then
 
-            echo "Already up to date."
-            echo "No commit required."
-            exit 0
+            echo "Python file already up to date."
+          else
+            echo "=== Upstream file changed ==="
+
+            cp "/tmp/upstream-gist/$TARGET_FILE" "$TARGET_FILE"
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+            git add "$TARGET_FILE"
+
+            git commit \
+              -m "Sync check_cf_warp_endpoint.py from upstream Gist" \
+              -m "Upstream commit: $UPSTREAM_SHA" \
+              -m "Upstream date: $UPSTREAM_DATE_UTC" \
+              -m "Upstream message: $UPSTREAM_MESSAGE"
+
+            git push origin main
+
+            FILE_CHANGED=true
+
+            echo "=== Python file sync completed ==="
           fi
 
-          echo "=== Upstream file changed ==="
+          # ==========================================================
+          # 40 天维护仓库活动
+          #
+          # heartbeat 文件：
+          # .github/sync-heartbeat
+          #
+          # 如果距离上一次 heartbeat >= 40 天，
+          # 创建一次维护 commit。
+          # ==========================================================
 
-          cp "/tmp/upstream-gist/$TARGET_FILE" "$TARGET_FILE"
+          echo "=== Check 40-day repository activity ==="
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          HEARTBEAT_FILE=".github/sync-heartbeat"
 
-          git add "$TARGET_FILE"
+          mkdir -p .github
 
-          git commit \
-            -m "Sync check_cf_warp_endpoint.py from upstream Gist" \
-            -m "Upstream commit: $UPSTREAM_SHA" \
-            -m "Upstream date: $UPSTREAM_DATE_UTC" \
-            -m "Upstream message: $UPSTREAM_MESSAGE"
+          if [ -f "$HEARTBEAT_FILE" ]; then
+            LAST_HEARTBEAT=$(cat "$HEARTBEAT_FILE")
 
-          git push origin main
+            LAST_HEARTBEAT_TS=$(
+              date -d "$LAST_HEARTBEAT" +%s 2>/dev/null || echo 0
+            )
+          else
+            LAST_HEARTBEAT_TS=0
+          fi
+
+          NOW_TS=$(date +%s)
+
+          if [ "$LAST_HEARTBEAT_TS" -eq 0 ]; then
+            DAYS=999
+          else
+            DAYS=$(( (NOW_TS - LAST_HEARTBEAT_TS) / 86400 ))
+          fi
+
+          echo "Days since last heartbeat: ${DAYS}"
+
+          if [ "$DAYS" -ge 40 ]; then
+
+            NOW_UTC=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+            echo "Creating heartbeat: ${NOW_UTC}"
+
+            printf '%s\n' "$NOW_UTC" > "$HEARTBEAT_FILE"
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+            git add "$HEARTBEAT_FILE"
+
+            git commit \
+              -m "chore: keep repository active"
+
+            git push origin main
+
+            echo "=== Heartbeat commit completed ==="
+          else
+            echo "No heartbeat required."
+          fi
 
           echo "=== Sync completed ==="
