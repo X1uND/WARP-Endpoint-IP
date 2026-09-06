@@ -34,11 +34,6 @@ jobs:
 
           git clone --quiet "$GIST_REPO" /tmp/upstream-gist
 
-          if [ ! -f "/tmp/upstream-gist/$TARGET_FILE" ]; then
-            echo "ERROR: $TARGET_FILE not found in upstream Gist."
-            exit 1
-          fi
-
           cd /tmp/upstream-gist
 
           UPSTREAM_SHA=$(git rev-parse HEAD)
@@ -56,32 +51,84 @@ jobs:
 
           FILE_CHANGED=false
 
-          if [ -f "$TARGET_FILE" ] && cmp -s \
-              "$TARGET_FILE" \
-              "/tmp/upstream-gist/$TARGET_FILE"; then
+          # ==========================================================
+          # 上游文件存在
+          # ==========================================================
+          if [ -f "/tmp/upstream-gist/$TARGET_FILE" ]; then
 
-            echo "Python file already up to date."
+            if [ -f "$TARGET_FILE" ] && cmp -s \
+                "$TARGET_FILE" \
+                "/tmp/upstream-gist/$TARGET_FILE"; then
+
+              echo "Python file already up to date."
+
+            else
+
+              echo "=== Upstream file added or changed ==="
+
+              cp "/tmp/upstream-gist/$TARGET_FILE" "$TARGET_FILE"
+
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+              git add "$TARGET_FILE"
+
+              git commit \
+                -m "Sync check_cf_warp_endpoint.py from upstream Gist" \
+                -m "Upstream commit: $UPSTREAM_SHA" \
+                -m "Upstream date: $UPSTREAM_DATE_UTC" \
+                -m "Upstream message: $UPSTREAM_MESSAGE"
+
+              git push origin main
+
+              FILE_CHANGED=true
+
+              echo "=== Python file sync completed ==="
+            fi
+
+          # ==========================================================
+          # 上游文件不存在
+          #
+          # 原作者删除文件：
+          #     删除本地对应文件
+          #
+          # 如果本地本来就没有：
+          #     不做任何操作
+          # ==========================================================
           else
-            echo "=== Upstream file changed ==="
 
-            cp "/tmp/upstream-gist/$TARGET_FILE" "$TARGET_FILE"
+            echo "Upstream file does not exist."
 
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            if [ -f "$TARGET_FILE" ]; then
 
-            git add "$TARGET_FILE"
+              echo "=== Upstream file was deleted ==="
+              echo "Deleting local file: $TARGET_FILE"
 
-            git commit \
-              -m "Sync check_cf_warp_endpoint.py from upstream Gist" \
-              -m "Upstream commit: $UPSTREAM_SHA" \
-              -m "Upstream date: $UPSTREAM_DATE_UTC" \
-              -m "Upstream message: $UPSTREAM_MESSAGE"
+              rm "$TARGET_FILE"
 
-            git push origin main
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-            FILE_CHANGED=true
+              git add "$TARGET_FILE"
 
-            echo "=== Python file sync completed ==="
+              git commit \
+                -m "Sync deletion of check_cf_warp_endpoint.py from upstream Gist" \
+                -m "Upstream commit: $UPSTREAM_SHA" \
+                -m "Upstream date: $UPSTREAM_DATE_UTC" \
+                -m "Upstream message: $UPSTREAM_MESSAGE"
+
+              git push origin main
+
+              FILE_CHANGED=true
+
+              echo "=== Python file deletion synced ==="
+
+            else
+
+              echo "Local file also does not exist."
+              echo "No file sync required."
+
+            fi
           fi
 
           # ==========================================================
@@ -139,8 +186,11 @@ jobs:
             git push origin main
 
             echo "=== Heartbeat commit completed ==="
+
           else
+
             echo "No heartbeat required."
+
           fi
 
           echo "=== Sync completed ==="
